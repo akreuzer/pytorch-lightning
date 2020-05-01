@@ -215,7 +215,7 @@ class TrainerIOMixin(ABC):
             if result == 0:
                 log.info(f'requeued exp {job_id}')
             else:
-                log.info('requeue failed...')
+                log.warning('requeue failed...')
 
             # close experiment to avoid issues
             self.logger.close()
@@ -251,9 +251,11 @@ class TrainerIOMixin(ABC):
             # do the actual save
             try:
                 self._atomic_save(checkpoint, filepath)
-            except AttributeError:
+            except AttributeError as e:
                 if 'hparams' in checkpoint:
                     del checkpoint['hparams']
+                rank_zero_warn('warning, `hparams` dropped from checkpoint.'
+                               f' An attribute is not picklable {e}')
 
                 self._atomic_save(checkpoint, filepath)
 
@@ -278,6 +280,10 @@ class TrainerIOMixin(ABC):
 
         # load the state_dict on the model automatically
         model.load_state_dict(checkpoint['state_dict'])
+
+        # give model a chance to load something
+        model.on_load_checkpoint(checkpoint)
+
         if on_gpu:
             model.cuda(self.root_gpu)
 
@@ -430,9 +436,11 @@ class TrainerIOMixin(ABC):
         # TODO: fix for anything with multiprocess DP, DDP, DDP2
         try:
             self._atomic_save(checkpoint, filepath)
-        except AttributeError:
+        except AttributeError as e:
             if 'hparams' in checkpoint:
                 del checkpoint['hparams']
+            rank_zero_warn('warning, `hparams` dropped from checkpoint.'
+                           f' An attribute is not picklable {e}')
 
             self._atomic_save(checkpoint, filepath)
 
